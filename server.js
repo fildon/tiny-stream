@@ -134,18 +134,25 @@ async function main() {
 
         if (role === "sender") {
           if (room.sender && room.sender !== ws) {
-            room.sender.send(
-              JSON.stringify({ type: "kicked", reason: "new-sender" }),
+            // Demote the old sender to receiver instead of kicking
+            const oldSender = room.sender;
+            oldSender._role = "receiver";
+            room.receivers.add(oldSender);
+            oldSender.send(
+              JSON.stringify({ type: "role-changed", newRole: "receiver" }),
             );
-            room.sender.close();
+            log(currentRoomName, "Previous sender demoted to receiver");
           }
           room.sender = ws;
+          ws._role = "sender";
           log(currentRoomName, "Video feed started");
+          // Notify all receivers (including the demoted one) that a new sender is ready
           for (const r of room.receivers) {
             r.send(JSON.stringify({ type: "sender-ready" }));
           }
         } else {
           room.receivers.add(ws);
+          ws._role = "receiver";
           log(
             currentRoomName,
             `Receiver joined (${room.receivers.size} viewer${room.receivers.size !== 1 ? "s" : ""})`,
@@ -163,7 +170,9 @@ async function main() {
       if (type === "offer" || type === "answer" || type === "ice-candidate") {
         if (!currentRoom) return;
 
-        if (role === "sender") {
+        const effectiveRole = ws._role || role;
+
+        if (effectiveRole === "sender") {
           if (msg.to) {
             for (const r of currentRoom.receivers) {
               if (r._peerId === msg.to) {
@@ -198,7 +207,10 @@ async function main() {
     ws.on("close", () => {
       if (!currentRoom) return;
 
-      if (role === "sender") {
+      // Use the live role from ws._role (may have been demoted)
+      const effectiveRole = ws._role || role;
+
+      if (effectiveRole === "sender" && currentRoom.sender === ws) {
         currentRoom.sender = null;
         log(currentRoomName, "Video feed stopped");
         for (const r of currentRoom.receivers) {

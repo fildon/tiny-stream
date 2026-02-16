@@ -75,7 +75,3 @@ Mobile browsers require HTTPS for camera access, except for `localhost`. If acce
 
 **Can't connect between devices?**  
 Make sure both devices are on the same Wi-Fi/LAN. Check that your firewall allows connections on port 3000.
-
-## License
-
-ISC

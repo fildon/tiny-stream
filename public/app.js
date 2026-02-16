@@ -181,9 +181,8 @@
         }
         break;
 
-      case "kicked":
-        alert("Another device started sending in this room.");
-        location.reload();
+      case "role-changed":
+        if (msg.newRole === "receiver") switchToReceiver();
         break;
     }
   }
@@ -348,6 +347,32 @@
     } else if (role === "receiver" && receiverPC) {
       receiverPC.addIceCandidate(new RTCIceCandidate(msg.candidate));
     }
+  }
+
+  // ── Role switching (sender demoted to receiver) ────────────────────────
+
+  function switchToReceiver() {
+    // Tear down sender state
+    if (localStream) {
+      localStream.getTracks().forEach((t) => t.stop());
+      localStream = null;
+    }
+    for (const pc of peerConnections.values()) pc.close();
+    peerConnections.clear();
+
+    // Switch role
+    role = "receiver";
+
+    // Switch UI
+    hide($sender);
+    show($receiver);
+    $receiverRoom.textContent = `Room: ${roomName}`;
+    $receiverStatus.textContent = "You were switched to viewer. Connecting…";
+    $receiverStatus.classList.remove("live");
+    $remoteVideo.srcObject = null;
+
+    // The server already moved us to the receivers set and will send
+    // "sender-ready" right after, which triggers startReceiving()
   }
 
   // ── Camera switching ───────────────────────────────────────────────────
