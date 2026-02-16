@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>tiny-stream</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📡</text></svg>"
+    />
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
@@ -19,6 +23,20 @@
           type="text"
           value="home"
           placeholder="e.g. home"
+          autocomplete="off"
+        />
+      </div>
+
+      <div class="room-input" id="codeInputWrap">
+        <label for="codeInput"
+          >Room code <span class="code-hint">(required to watch)</span></label
+        >
+        <input
+          id="codeInput"
+          type="text"
+          inputmode="numeric"
+          maxlength="4"
+          placeholder="4-digit code"
           autocomplete="off"
         />
       </div>
@@ -56,6 +74,10 @@
         <video id="localVideo" autoplay playsinline muted></video>
       </div>
       <div id="senderStatus" class="status">Initializing camera…</div>
+      <div id="senderCode" class="room-code-display hidden">
+        Room code: <span id="senderCodeValue" class="code-value"></span>
+        <span class="code-note">Share this code with viewers</span>
+      </div>
       <div class="camera-select-wrap">
         <label for="cameraSelect">Camera:</label>
         <select id="cameraSelect"></select>

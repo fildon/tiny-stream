@@ -1,6 +1,8 @@
 // ── tiny-stream client ──────────────────────────────────────────────────────
 // Handles both sender & receiver roles via WebRTC + WebSocket signaling.
 
+import type { SignalMessage } from "./types";
+
 // ── Elements ────────────────────────────────────────────────────────────
 const $landing = document.getElementById("landing")!;
 const $sender = document.getElementById("sender")!;
@@ -19,20 +21,9 @@ const $btnStopRecv = document.getElementById("btnStopRecv")!;
 const $cameraSelect = document.getElementById(
   "cameraSelect",
 ) as HTMLSelectElement;
-
-// ── Types ───────────────────────────────────────────────────────────────
-
-interface SignalMessage {
-  type: string;
-  sdp?: string | null;
-  candidate?: RTCIceCandidateInit;
-  from?: string;
-  to?: string;
-  peerId?: string;
-  newRole?: string;
-  room?: string;
-  role?: string;
-}
+const $codeInput = document.getElementById("codeInput") as HTMLInputElement;
+const $senderCode = document.getElementById("senderCode")!;
+const $senderCodeValue = document.getElementById("senderCodeValue")!;
 
 // ── State ───────────────────────────────────────────────────────────────
 let ws: WebSocket | null = null;
@@ -140,6 +131,22 @@ function connectWS(onOpen: () => void): void {
 function handleSignal(msg: SignalMessage): void {
   switch (msg.type) {
     case "joined":
+      break;
+
+    case "room-code":
+      // Sender receives the room code to display
+      if (msg.code) {
+        $senderCodeValue.textContent = msg.code;
+        $senderCode.classList.remove("hidden");
+      }
+      break;
+
+    case "join-denied":
+      // Receiver was denied entry
+      if (role === "receiver") {
+        $receiverStatus.textContent = `Access denied: ${msg.reason || "Invalid code"}`;
+        setTimeout(() => stopEverything(), 2000);
+      }
       break;
 
     // ── Sender-side signals ────────────────────────────────────────────
@@ -291,8 +298,15 @@ async function startAsReceiver(): Promise<void> {
   $receiverRoom.textContent = `Room: ${roomName}`;
   $receiverStatus.textContent = "Connecting…";
 
+  const code = $codeInput.value.trim();
+  if (!code) {
+    $receiverStatus.textContent = "Room code is required.";
+    setTimeout(() => stopEverything(), 2000);
+    return;
+  }
+
   connectWS(() => {
-    send({ type: "join", room: roomName, role: "receiver" });
+    send({ type: "join", room: roomName, role: "receiver", code });
     $receiverStatus.textContent = "Waiting for sender…";
   });
 }
@@ -317,35 +331,36 @@ async function handleOffer(msg: SignalMessage): Promise<void> {
     receiverPC.close();
   }
 
-  receiverPC = new RTCPeerConnection(rtcConfig);
+  const pc = new RTCPeerConnection(rtcConfig);
+  receiverPC = pc;
 
-  receiverPC.ontrack = (e) => {
+  pc.ontrack = (e) => {
     $remoteVideo.srcObject = e.streams[0];
     $receiverStatus.textContent = "Receiving live video ●";
     $receiverStatus.classList.add("live");
   };
 
-  receiverPC.onicecandidate = (e) => {
+  pc.onicecandidate = (e) => {
     if (e.candidate) {
       send({ type: "ice-candidate", candidate: e.candidate, to: msg.from });
     }
   };
 
-  receiverPC.onconnectionstatechange = () => {
+  pc.onconnectionstatechange = () => {
     if (
-      receiverPC!.connectionState === "disconnected" ||
-      receiverPC!.connectionState === "failed"
+      pc.connectionState === "disconnected" ||
+      pc.connectionState === "failed"
     ) {
       $receiverStatus.textContent = "Connection lost. Waiting for sender…";
       $receiverStatus.classList.remove("live");
     }
   };
 
-  await receiverPC.setRemoteDescription(
+  await pc.setRemoteDescription(
     new RTCSessionDescription({ type: "offer", sdp: msg.sdp! }),
   );
-  const answer = await receiverPC.createAnswer();
-  await receiverPC.setLocalDescription(answer);
+  const answer = await pc.createAnswer();
+  await pc.setLocalDescription(answer);
   send({ type: "answer", sdp: answer.sdp, to: msg.from });
 }
 
@@ -436,6 +451,8 @@ function stopEverything(): void {
   hide($sender);
   hide($receiver);
   show($landing);
+  $senderCode.classList.add("hidden");
+  $codeInput.value = "";
 }
 
 $btnStopSend.addEventListener("click", stopEverything);
@@ -455,7 +472,7 @@ $roomInput.addEventListener("input", () => {
 
 // ── Fetch & display QR code on landing page ────────────────────────────
 
-(async () => {
+async function fetchQR(): Promise<void> {
   try {
     const res = await fetch("/api/info");
     const { networkUrl, qrSvg } = await res.json();
@@ -470,4 +487,6 @@ $roomInput.addEventListener("input", () => {
   } catch {
     // Not critical
   }
-})();
+}
+
+fetchQR();

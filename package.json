@@ -2,16 +2,14 @@
   "name": "tiny-stream",
   "version": "1.0.0",
   "description": "One-way video streaming between devices on your local network",
-  "main": "server.ts",
   "scripts": {
     "build": "esbuild src/app.ts --bundle --outfile=public/app.js --format=iife --target=es2022",
     "start": "npm run build && tsx server.ts",
-    "dev": "tsx server.ts"
+    "dev": "npm run build && tsx server.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
   "dependencies": {
     "express": "^5.2.1",
     "qrcode": "^1.5.4",

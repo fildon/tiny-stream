@@ -6,30 +6,27 @@ import path from "path";
 import os from "os";
 import QRCode from "qrcode";
 import selfsigned from "selfsigned";
+import type { SignalMessage } from "./src/types";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
 interface Room {
-  sender: SignalSocket | null;
-  receivers: Set<SignalSocket>;
+  sender: WebSocket | null;
+  receivers: Set<WebSocket>;
+  code: string;
 }
 
-interface SignalSocket extends WebSocket {
-  _role?: string;
-  _peerId?: string;
-}
-
-interface SignalMessage {
-  type: string;
-  room?: string;
-  role?: string;
+interface SocketMeta {
+  role: string | null;
   peerId?: string;
-  to?: string;
-  from?: string;
-  [key: string]: unknown;
+  roomName?: string;
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
+
+function generateRoomCode(): string {
+  return Math.floor(1000 + Math.random() * 9000).toString();
+}
 
 function getLocalIPs(): string[] {
   const nets = os.networkInterfaces();
@@ -43,10 +40,16 @@ function getLocalIPs(): string[] {
   return ips;
 }
 
+const localIPs = getLocalIPs();
+
 function getNetworkUrl(port: number | string): string {
-  const ips = getLocalIPs();
-  if (ips.length > 0) return `https://${ips[0]}:${port}`;
+  if (localIPs.length > 0) return `https://${localIPs[0]}:${port}`;
   return `https://localhost:${port}`;
+}
+
+function log(room: string, msg: string): void {
+  const ts = new Date().toLocaleTimeString();
+  console.log(`  [${ts}] [${room}] ${msg}`);
 }
 
 // ── Auto-generate self-signed TLS cert ──────────────────────────────────────
@@ -75,7 +78,7 @@ async function ensureCerts(): Promise<{
         altNames: [
           { type: 2 as const, value: "localhost" },
           { type: 7 as const, ip: "127.0.0.1" },
-          ...getLocalIPs().map((ip) => ({ type: 7 as const, ip })),
+          ...localIPs.map((ip) => ({ type: 7 as const, ip })),
         ],
       },
     ],
@@ -90,6 +93,214 @@ async function ensureCerts(): Promise<{
   return { cert: pems.cert, key: pems.private };
 }
 
+// ── Startup banner ──────────────────────────────────────────────────────────
+
+async function printBanner(port: number): Promise<void> {
+  const urls: [string, string][] = [["Local", `https://localhost:${port}`]];
+  for (const addr of localIPs) {
+    urls.push(["Network", `https://${addr}:${port}`]);
+  }
+
+  const contentWidth =
+    Math.max(
+      "tiny-stream is running!".length,
+      ...urls.map(([label, url]) => `${label}:   ${url}`.length),
+    ) + 4;
+
+  const line = "═".repeat(contentWidth + 2);
+  const pad = (str: string) =>
+    str + " ".repeat(Math.max(0, contentWidth - str.length));
+
+  console.log("");
+  console.log(`  ╔${line}╗`);
+  console.log(`  ║ ${pad("  tiny-stream is running!")} ║`);
+  console.log(`  ╠${line}╣`);
+  for (const [label, url] of urls) {
+    const prefix = label === "Local" ? "Local:  " : "Network:";
+    console.log(`  ║ ${pad(` ${prefix} ${url}`)} ║`);
+  }
+  console.log(`  ╚${line}╝`);
+
+  const networkUrl = getNetworkUrl(port);
+  try {
+    const qrText = await QRCode.toString(networkUrl, { type: "utf8" });
+    console.log("");
+    console.log("  Scan to connect:");
+    console.log("");
+    for (const qrLine of qrText.split("\n")) {
+      console.log(`    ${qrLine}`);
+    }
+  } catch {
+    // QR generation failed — not critical
+  }
+
+  console.log("");
+  console.log("  Open the Network URL on any device in your home network.");
+  console.log("  First visit: accept the self-signed certificate warning.\n");
+}
+
+// ── WebSocket signaling ─────────────────────────────────────────────────────
+
+function setupSignaling(wss: WebSocketServer, rooms: Map<string, Room>): void {
+  const socketMeta = new Map<WebSocket, SocketMeta>();
+
+  function getRoom(id: string): Room {
+    if (!rooms.has(id)) {
+      rooms.set(id, {
+        sender: null,
+        receivers: new Set(),
+        code: generateRoomCode(),
+      });
+    }
+    return rooms.get(id)!;
+  }
+
+  function getMeta(ws: WebSocket): SocketMeta {
+    return socketMeta.get(ws)!;
+  }
+
+  wss.on("connection", (ws: WebSocket) => {
+    socketMeta.set(ws, { role: null });
+
+    ws.on("message", (raw) => {
+      let msg: SignalMessage;
+      try {
+        msg = JSON.parse(raw.toString());
+      } catch {
+        return;
+      }
+
+      const { type } = msg;
+      const meta = getMeta(ws);
+
+      // ── Peer ID registration ───────────────────────────────────────────
+      if (type === "register-id") {
+        meta.peerId = msg.peerId;
+        return;
+      }
+
+      // ── Join a room ────────────────────────────────────────────────────
+      if (type === "join") {
+        if (!msg.room || !msg.role) return;
+
+        const room = getRoom(msg.room);
+
+        // Receivers must provide the correct room code
+        if (msg.role === "receiver" && msg.code !== room.code) {
+          ws.send(
+            JSON.stringify({
+              type: "join-denied",
+              reason: msg.code ? "Invalid room code" : "Room code required",
+            }),
+          );
+          return;
+        }
+
+        meta.roomName = msg.room;
+        meta.role = msg.role;
+
+        if (msg.role === "sender") {
+          if (room.sender && room.sender !== ws) {
+            // Demote the old sender to receiver instead of kicking
+            const oldMeta = getMeta(room.sender);
+            oldMeta.role = "receiver";
+            room.receivers.add(room.sender);
+            room.sender.send(
+              JSON.stringify({ type: "role-changed", newRole: "receiver" }),
+            );
+            log(msg.room, "Previous sender demoted to receiver");
+          }
+          room.sender = ws;
+          log(msg.room, `Video feed started (code: ${room.code})`);
+          // Send the room code back to the sender
+          ws.send(JSON.stringify({ type: "room-code", code: room.code }));
+          // Notify all receivers (including the demoted one) that a new sender is ready
+          for (const r of room.receivers) {
+            r.send(JSON.stringify({ type: "sender-ready" }));
+          }
+        } else {
+          room.receivers.add(ws);
+          log(
+            msg.room,
+            `Receiver joined (${room.receivers.size} viewer${room.receivers.size !== 1 ? "s" : ""})`,
+          );
+          if (room.sender) {
+            ws.send(JSON.stringify({ type: "sender-ready" }));
+          }
+        }
+
+        ws.send(JSON.stringify({ type: "joined", role: msg.role }));
+        return;
+      }
+
+      // ── WebRTC signaling relay ─────────────────────────────────────────
+      if (type === "offer" || type === "answer" || type === "ice-candidate") {
+        if (!meta.roomName) return;
+        const room = rooms.get(meta.roomName);
+        if (!room) return;
+
+        if (meta.role === "sender") {
+          if (msg.to) {
+            for (const r of room.receivers) {
+              if (getMeta(r).peerId === msg.to) {
+                r.send(JSON.stringify({ ...msg, from: meta.peerId }));
+                break;
+              }
+            }
+          } else {
+            for (const r of room.receivers) {
+              if (r.readyState === WebSocket.OPEN) {
+                r.send(JSON.stringify({ ...msg, from: meta.peerId }));
+              }
+            }
+          }
+        } else {
+          if (room.sender && room.sender.readyState === WebSocket.OPEN) {
+            room.sender.send(JSON.stringify({ ...msg, from: meta.peerId }));
+          }
+        }
+        return;
+      }
+    });
+
+    ws.on("close", () => {
+      const meta = getMeta(ws);
+      const { roomName } = meta;
+      socketMeta.delete(ws);
+
+      if (!roomName) return;
+      const room = rooms.get(roomName);
+      if (!room) return;
+
+      if (meta.role === "sender" && room.sender === ws) {
+        room.sender = null;
+        log(roomName, "Video feed stopped");
+        for (const r of room.receivers) {
+          if (r.readyState === WebSocket.OPEN) {
+            r.send(JSON.stringify({ type: "sender-left" }));
+          }
+        }
+      } else {
+        room.receivers.delete(ws);
+        log(
+          roomName,
+          `Receiver disconnected (${room.receivers.size} viewer${room.receivers.size !== 1 ? "s" : ""} remaining)`,
+        );
+        if (room.sender && room.sender.readyState === WebSocket.OPEN) {
+          room.sender.send(
+            JSON.stringify({ type: "receiver-left", peerId: meta.peerId }),
+          );
+        }
+      }
+
+      // O(1) room cleanup
+      if (!room.sender && room.receivers.size === 0) {
+        rooms.delete(roomName);
+      }
+    });
+  });
+}
+
 // ── Main ────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -98,6 +309,7 @@ async function main(): Promise<void> {
   const app = express();
   const server = https.createServer({ cert, key }, app);
   const wss = new WebSocketServer({ server });
+  const rooms = new Map<string, Room>();
 
   // ── Graceful shutdown ─────────────────────────────────────────────────
 
@@ -106,22 +318,22 @@ async function main(): Promise<void> {
     wss.clients.forEach((ws) => ws.close());
     wss.close();
     server.close(() => process.exit(0));
-    // Force exit if connections linger
-    setTimeout(() => process.exit(0), 3000);
+    setTimeout(() => process.exit(0), 3000).unref();
   }
 
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 
-  // Serve static files from public/
+  // ── Static files & API ────────────────────────────────────────────────
+
   app.use(express.static(path.join(__dirname, "public")));
 
-  // ── API: server info + QR SVG ─────────────────────────────────────────
-
   app.get("/api/info", async (_req, res) => {
-    const port = server.address()
-      ? (server.address() as { port: number }).port
-      : process.env.PORT || 3000;
+    const addr = server.address();
+    const port =
+      addr && typeof addr !== "string"
+        ? addr.port
+        : Number(process.env.PORT) || 3000;
     const networkUrl = getNetworkUrl(port);
     try {
       const qrSvg = await QRCode.toString(networkUrl, {
@@ -135,212 +347,15 @@ async function main(): Promise<void> {
     }
   });
 
-  // ── WebSocket signaling ───────────────────────────────────────────────
+  // ── Signaling ─────────────────────────────────────────────────────────
 
-  const rooms = new Map<string, Room>();
+  setupSignaling(wss, rooms);
 
-  function getRoom(id: string): Room {
-    if (!rooms.has(id)) {
-      rooms.set(id, { sender: null, receivers: new Set() });
-    }
-    return rooms.get(id)!;
-  }
-
-  function log(room: string, msg: string): void {
-    const ts = new Date().toLocaleTimeString();
-    console.log(`  [${ts}] [${room}] ${msg}`);
-  }
-
-  wss.on("connection", (ws: SignalSocket) => {
-    let currentRoom: Room | null = null;
-    let currentRoomName: string | null = null;
-    let role: string | null = null;
-
-    ws.on("message", (raw) => {
-      let msg: SignalMessage;
-      try {
-        msg = JSON.parse(raw.toString());
-      } catch {
-        return;
-      }
-
-      const { type } = msg;
-
-      // ── Join a room ────────────────────────────────────────────────────
-      if (type === "join") {
-        const room = getRoom(msg.room!);
-        currentRoom = room;
-        currentRoomName = msg.room!;
-        role = msg.role!;
-
-        if (role === "sender") {
-          if (room.sender && room.sender !== ws) {
-            // Demote the old sender to receiver instead of kicking
-            const oldSender = room.sender;
-            oldSender._role = "receiver";
-            room.receivers.add(oldSender);
-            oldSender.send(
-              JSON.stringify({ type: "role-changed", newRole: "receiver" }),
-            );
-            log(currentRoomName, "Previous sender demoted to receiver");
-          }
-          room.sender = ws;
-          ws._role = "sender";
-          log(currentRoomName, "Video feed started");
-          // Notify all receivers (including the demoted one) that a new sender is ready
-          for (const r of room.receivers) {
-            r.send(JSON.stringify({ type: "sender-ready" }));
-          }
-        } else {
-          room.receivers.add(ws);
-          ws._role = "receiver";
-          log(
-            currentRoomName,
-            `Receiver joined (${room.receivers.size} viewer${room.receivers.size !== 1 ? "s" : ""})`,
-          );
-          if (room.sender) {
-            ws.send(JSON.stringify({ type: "sender-ready" }));
-          }
-        }
-
-        ws.send(JSON.stringify({ type: "joined", role }));
-        return;
-      }
-
-      // ── WebRTC signaling relay ─────────────────────────────────────────
-      if (type === "offer" || type === "answer" || type === "ice-candidate") {
-        if (!currentRoom) return;
-
-        const effectiveRole = ws._role || role;
-
-        if (effectiveRole === "sender") {
-          if (msg.to) {
-            for (const r of currentRoom.receivers) {
-              if (r._peerId === msg.to) {
-                r.send(JSON.stringify({ ...msg, from: ws._peerId }));
-                break;
-              }
-            }
-          } else {
-            for (const r of currentRoom.receivers) {
-              if (r.readyState === WebSocket.OPEN) {
-                r.send(JSON.stringify({ ...msg, from: ws._peerId }));
-              }
-            }
-          }
-        } else {
-          if (
-            currentRoom.sender &&
-            currentRoom.sender.readyState === WebSocket.OPEN
-          ) {
-            currentRoom.sender.send(
-              JSON.stringify({ ...msg, from: ws._peerId }),
-            );
-          }
-        }
-        return;
-      }
-
-      // ── Peer ID registration ───────────────────────────────────────────
-      if (type === "register-id") {
-        ws._peerId = msg.peerId;
-        return;
-      }
-    });
-
-    ws.on("close", () => {
-      if (!currentRoom) return;
-
-      // Use the live role from ws._role (may have been demoted)
-      const effectiveRole = ws._role || role;
-
-      if (effectiveRole === "sender" && currentRoom.sender === ws) {
-        currentRoom.sender = null;
-        log(currentRoomName!, "Video feed stopped");
-        for (const r of currentRoom.receivers) {
-          if (r.readyState === WebSocket.OPEN) {
-            r.send(JSON.stringify({ type: "sender-left" }));
-          }
-        }
-      } else {
-        currentRoom.receivers.delete(ws);
-        log(
-          currentRoomName!,
-          `Receiver disconnected (${currentRoom.receivers.size} viewer${currentRoom.receivers.size !== 1 ? "s" : ""} remaining)`,
-        );
-        if (
-          currentRoom.sender &&
-          currentRoom.sender.readyState === WebSocket.OPEN
-        ) {
-          currentRoom.sender.send(
-            JSON.stringify({ type: "receiver-left", peerId: ws._peerId }),
-          );
-        }
-      }
-
-      // Clean up empty rooms
-      if (!currentRoom.sender && currentRoom.receivers.size === 0) {
-        for (const [id, r] of rooms) {
-          if (r === currentRoom) {
-            rooms.delete(id);
-            break;
-          }
-        }
-      }
-    });
-  });
-
-  // ── Start server ──────────────────────────────────────────────────────
+  // ── Start ─────────────────────────────────────────────────────────────
 
   const PORT = Number(process.env.PORT) || 3000;
-  server.listen(PORT, "0.0.0.0", async () => {
-    const addresses = getLocalIPs();
-
-    const localUrl = `https://localhost:${PORT}`;
-    const urls: [string, string][] = [["Local", localUrl]];
-    for (const addr of addresses) {
-      urls.push(["Network", `https://${addr}:${PORT}`]);
-    }
-
-    const contentWidth =
-      Math.max(
-        "tiny-stream is running!".length,
-        ...urls.map(([label, url]) => `${label}:   ${url}`.length),
-      ) + 4;
-
-    const line = "═".repeat(contentWidth + 2);
-    const pad = (str: string) =>
-      str + " ".repeat(Math.max(0, contentWidth - str.length));
-
-    console.log("");
-    console.log(`  ╔${line}╗`);
-    console.log(`  ║ ${pad("  tiny-stream is running!")} ║`);
-    console.log(`  ╠${line}╣`);
-    for (const [label, url] of urls) {
-      const prefix = label === "Local" ? "Local:  " : "Network:";
-      console.log(`  ║ ${pad(` ${prefix} ${url}`)} ║`);
-    }
-    console.log(`  ╚${line}╝`);
-
-    // Print QR code for the network URL in the terminal
-    const networkUrl = getNetworkUrl(PORT);
-    try {
-      const qrText = await QRCode.toString(networkUrl, {
-        type: "utf8",
-      });
-      console.log("");
-      console.log("  Scan to connect:");
-      console.log("");
-      for (const qrLine of qrText.split("\n")) {
-        console.log(`    ${qrLine}`);
-      }
-    } catch {
-      // QR generation failed — not critical
-    }
-
-    console.log("");
-    console.log("  Open the Network URL on any device in your home network.");
-    console.log("  First visit: accept the self-signed certificate warning.\n");
+  server.listen(PORT, "0.0.0.0", () => {
+    printBanner(PORT);
   });
 }
 

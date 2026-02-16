@@ -15,8 +15,8 @@ The server prints your local network URL:
   ╔══════════════════════════════════════════════╗
   ║         tiny-stream is running!         ║
   ╠══════════════════════════════════════════════╣
-  ║  Local:   http://localhost:3000         ║
-  ║  Network: http://192.168.1.42:3000      ║
+  ║  Local:   https://localhost:3000        ║
+  ║  Network: https://192.168.1.42:3000     ║
   ╚══════════════════════════════════════════════╝
 ```
 
@@ -71,7 +71,7 @@ PORT=8080 npm start
 ## Troubleshooting
 
 **Camera not working on phone?**  
-Mobile browsers require HTTPS for camera access, except for `localhost`. If accessing via IP on a phone, some browsers (especially iOS Safari) may block camera access. Chrome on Android generally allows it over plain HTTP on local networks.
+Mobile browsers require HTTPS for camera access. On first visit, you'll need to accept the self-signed certificate warning. If the browser still blocks camera access, try opening the URL directly (not via redirect) and accepting the certificate again.
 
 **Can't connect between devices?**  
 Make sure both devices are on the same Wi-Fi/LAN. Check that your firewall allows connections on port 3000.

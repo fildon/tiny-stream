@@ -324,3 +324,38 @@ body {
   font-family: "SF Mono", "Cascadia Code", "Consolas", monospace;
   word-break: break-all;
 }
+
+/* ── Room code ──────────────────────────────────────────────────────────── */
+
+.code-hint {
+  font-weight: 400;
+  color: var(--text-dim);
+  font-size: 0.7rem;
+}
+
+.room-code-display {
+  margin-top: 0.75rem;
+  padding: 0.6rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--accent-send);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  text-align: center;
+  color: var(--text);
+}
+
+.code-value {
+  font-family: "SF Mono", "Cascadia Code", "Consolas", monospace;
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: var(--accent-send);
+  margin: 0 0.4rem;
+}
+
+.code-note {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  margin-top: 0.25rem;
+}
