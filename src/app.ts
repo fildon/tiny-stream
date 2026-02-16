@@ -5,30 +5,48 @@
   "use strict";
 
   // ── Elements ────────────────────────────────────────────────────────────
-  const $landing = document.getElementById("landing");
-  const $sender = document.getElementById("sender");
-  const $receiver = document.getElementById("receiver");
-  const $roomInput = document.getElementById("roomInput");
-  const $btnSend = document.getElementById("btnSend");
-  const $btnReceive = document.getElementById("btnReceive");
-  const $localVideo = document.getElementById("localVideo");
-  const $remoteVideo = document.getElementById("remoteVideo");
-  const $senderStatus = document.getElementById("senderStatus");
-  const $receiverStatus = document.getElementById("receiverStatus");
-  const $senderRoom = document.getElementById("senderRoom");
-  const $receiverRoom = document.getElementById("receiverRoom");
-  const $btnStopSend = document.getElementById("btnStopSend");
-  const $btnStopRecv = document.getElementById("btnStopRecv");
-  const $cameraSelect = document.getElementById("cameraSelect");
+  const $landing = document.getElementById("landing")!;
+  const $sender = document.getElementById("sender")!;
+  const $receiver = document.getElementById("receiver")!;
+  const $roomInput = document.getElementById("roomInput") as HTMLInputElement;
+  const $btnSend = document.getElementById("btnSend")!;
+  const $btnReceive = document.getElementById("btnReceive")!;
+  const $localVideo = document.getElementById("localVideo") as HTMLVideoElement;
+  const $remoteVideo = document.getElementById(
+    "remoteVideo",
+  ) as HTMLVideoElement;
+  const $senderStatus = document.getElementById("senderStatus")!;
+  const $receiverStatus = document.getElementById("receiverStatus")!;
+  const $senderRoom = document.getElementById("senderRoom")!;
+  const $receiverRoom = document.getElementById("receiverRoom")!;
+  const $btnStopSend = document.getElementById("btnStopSend")!;
+  const $btnStopRecv = document.getElementById("btnStopRecv")!;
+  const $cameraSelect = document.getElementById(
+    "cameraSelect",
+  ) as HTMLSelectElement;
+
+  // ── Types ───────────────────────────────────────────────────────────────
+
+  interface SignalMessage {
+    type: string;
+    sdp?: string | null;
+    candidate?: RTCIceCandidateInit;
+    from?: string;
+    to?: string;
+    peerId?: string;
+    newRole?: string;
+    room?: string;
+    role?: string;
+  }
 
   // ── State ───────────────────────────────────────────────────────────────
-  let ws = null;
-  let localStream = null;
-  let role = null;
+  let ws: WebSocket | null = null;
+  let localStream: MediaStream | null = null;
+  let role: "sender" | "receiver" | null = null;
   let roomName = "home";
 
   // crypto.randomUUID() requires a secure context (HTTPS); fall back for plain HTTP
-  const peerId =
+  const peerId: string =
     typeof crypto.randomUUID === "function"
       ? crypto.randomUUID()
       : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
@@ -37,14 +55,14 @@
         });
 
   // Sender keeps one RTCPeerConnection per receiver
-  const peerConnections = new Map(); // peerId → RTCPeerConnection
+  const peerConnections = new Map<string, RTCPeerConnection>();
 
   // Receiver keeps a single RTCPeerConnection to the sender
-  let receiverPC = null;
+  let receiverPC: RTCPeerConnection | null = null;
 
   // Free STUN servers for NAT traversal (local network usually doesn't need them,
   // but they don't hurt and help if you ever go cross-network)
-  const rtcConfig = {
+  const rtcConfig: RTCConfiguration = {
     iceServers: [
       { urls: "stun:stun.l.google.com:19302" },
       { urls: "stun:stun1.l.google.com:19302" },
@@ -53,19 +71,19 @@
 
   // ── Helpers ─────────────────────────────────────────────────────────────
 
-  function show(el) {
+  function show(el: HTMLElement): void {
     el.classList.remove("hidden");
   }
-  function hide(el) {
+  function hide(el: HTMLElement): void {
     el.classList.add("hidden");
   }
 
-  function wsUrl() {
+  function wsUrl(): string {
     const proto = location.protocol === "https:" ? "wss" : "ws";
     return `${proto}://${location.host}`;
   }
 
-  function send(msg) {
+  function send(msg: Record<string, unknown>): void {
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(msg));
     }
@@ -73,7 +91,7 @@
 
   // ── Camera enumeration ──────────────────────────────────────────────────
 
-  async function enumerateCameras() {
+  async function enumerateCameras(): Promise<MediaDeviceInfo[]> {
     const devices = await navigator.mediaDevices.enumerateDevices();
     const cameras = devices.filter((d) => d.kind === "videoinput");
     $cameraSelect.innerHTML = "";
@@ -86,8 +104,8 @@
     return cameras;
   }
 
-  async function getStream(deviceId) {
-    const constraints = {
+  async function getStream(deviceId?: string): Promise<MediaStream> {
+    const constraints: MediaStreamConstraints = {
       video: deviceId
         ? {
             deviceId: { exact: deviceId },
@@ -102,7 +120,7 @@
 
   // ── WebSocket connection ────────────────────────────────────────────────
 
-  function connectWS(onOpen) {
+  function connectWS(onOpen: () => void): void {
     ws = new WebSocket(wsUrl());
 
     ws.onopen = () => {
@@ -110,8 +128,8 @@
       onOpen();
     };
 
-    ws.onmessage = (evt) => {
-      const msg = JSON.parse(evt.data);
+    ws.onmessage = (evt: MessageEvent) => {
+      const msg: SignalMessage = JSON.parse(evt.data);
       handleSignal(msg);
     };
 
@@ -124,7 +142,7 @@
 
   // ── Signaling handler ──────────────────────────────────────────────────
 
-  function handleSignal(msg) {
+  function handleSignal(msg: SignalMessage): void {
     switch (msg.type) {
       case "joined":
         break;
@@ -163,7 +181,7 @@
           msg.peerId &&
           peerConnections.has(msg.peerId)
         ) {
-          peerConnections.get(msg.peerId).close();
+          peerConnections.get(msg.peerId)!.close();
           peerConnections.delete(msg.peerId);
           updateSenderStatus();
         }
@@ -189,7 +207,7 @@
 
   // ── Sender logic ───────────────────────────────────────────────────────
 
-  async function startSending() {
+  async function startSending(): Promise<void> {
     role = "sender";
     roomName = $roomInput.value.trim() || "home";
     hide($landing);
@@ -207,7 +225,7 @@
       const settings = currentTrack.getSettings();
       if (settings.deviceId) $cameraSelect.value = settings.deviceId;
     } catch (err) {
-      $senderStatus.textContent = `Camera error: ${err.message}`;
+      $senderStatus.textContent = `Camera error: ${(err as Error).message}`;
       return;
     }
 
@@ -216,12 +234,14 @@
     });
   }
 
-  function createPeerConnectionForReceiver(receiverPeerId) {
+  function createPeerConnectionForReceiver(
+    receiverPeerId: string,
+  ): RTCPeerConnection {
     const pc = new RTCPeerConnection(rtcConfig);
 
     // Add all local tracks
-    for (const track of localStream.getTracks()) {
-      pc.addTrack(track, localStream);
+    for (const track of localStream!.getTracks()) {
+      pc.addTrack(track, localStream!);
     }
 
     pc.onicecandidate = (e) => {
@@ -242,7 +262,7 @@
     return pc;
   }
 
-  async function sendOfferTo(receiverPeerId) {
+  async function sendOfferTo(receiverPeerId: string): Promise<void> {
     const pc = createPeerConnectionForReceiver(receiverPeerId);
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
@@ -250,16 +270,16 @@
     updateSenderStatus();
   }
 
-  function handleAnswer(msg) {
-    const pc = peerConnections.get(msg.from);
+  function handleAnswer(msg: SignalMessage): void {
+    const pc = peerConnections.get(msg.from!);
     if (pc) {
       pc.setRemoteDescription(
-        new RTCSessionDescription({ type: "answer", sdp: msg.sdp }),
+        new RTCSessionDescription({ type: "answer", sdp: msg.sdp! }),
       );
     }
   }
 
-  function updateSenderStatus() {
+  function updateSenderStatus(): void {
     const connected = [...peerConnections.values()].filter(
       (pc) => pc.connectionState === "connected",
     ).length;
@@ -272,7 +292,7 @@
 
   // ── Receiver logic ─────────────────────────────────────────────────────
 
-  async function startAsReceiver() {
+  async function startAsReceiver(): Promise<void> {
     role = "receiver";
     roomName = $roomInput.value.trim() || "home";
     hide($landing);
@@ -286,7 +306,7 @@
     });
   }
 
-  function startReceiving() {
+  function startReceiving(): void {
     // If already connected, clean up first
     if (receiverPC) {
       receiverPC.close();
@@ -301,7 +321,7 @@
     $receiverStatus.textContent = "Sender found! Connecting…";
   }
 
-  async function handleOffer(msg) {
+  async function handleOffer(msg: SignalMessage): Promise<void> {
     if (receiverPC) {
       receiverPC.close();
     }
@@ -322,8 +342,8 @@
 
     receiverPC.onconnectionstatechange = () => {
       if (
-        receiverPC.connectionState === "disconnected" ||
-        receiverPC.connectionState === "failed"
+        receiverPC!.connectionState === "disconnected" ||
+        receiverPC!.connectionState === "failed"
       ) {
         $receiverStatus.textContent = "Connection lost. Waiting for sender…";
         $receiverStatus.classList.remove("live");
@@ -331,7 +351,7 @@
     };
 
     await receiverPC.setRemoteDescription(
-      new RTCSessionDescription({ type: "offer", sdp: msg.sdp }),
+      new RTCSessionDescription({ type: "offer", sdp: msg.sdp! }),
     );
     const answer = await receiverPC.createAnswer();
     await receiverPC.setLocalDescription(answer);
@@ -340,7 +360,7 @@
 
   // ── ICE candidates (both sides) ────────────────────────────────────────
 
-  function handleIceCandidate(msg) {
+  function handleIceCandidate(msg: SignalMessage): void {
     if (role === "sender" && msg.from) {
       const pc = peerConnections.get(msg.from);
       if (pc) pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
@@ -351,7 +371,7 @@
 
   // ── Role switching (sender demoted to receiver) ────────────────────────
 
-  function switchToReceiver() {
+  function switchToReceiver(): void {
     // Tear down sender state
     if (localStream) {
       localStream.getTracks().forEach((t) => t.stop());
@@ -397,17 +417,17 @@
       }
 
       // Stop old tracks
-      localStream.getTracks().forEach((t) => t.stop());
+      localStream!.getTracks().forEach((t) => t.stop());
       localStream = newStream;
       $localVideo.srcObject = localStream;
     } catch (err) {
-      $senderStatus.textContent = `Camera switch error: ${err.message}`;
+      $senderStatus.textContent = `Camera switch error: ${(err as Error).message}`;
     }
   });
 
   // ── Stop buttons ───────────────────────────────────────────────────────
 
-  function stopEverything() {
+  function stopEverything(): void {
     if (localStream) {
       localStream.getTracks().forEach((t) => t.stop());
       localStream = null;
@@ -449,9 +469,9 @@
       const res = await fetch("/api/info");
       const { networkUrl, qrSvg } = await res.json();
       if (qrSvg) {
-        const $qrSection = document.getElementById("qrSection");
-        const $qrCode = document.getElementById("qrCode");
-        const $qrUrl = document.getElementById("qrUrl");
+        const $qrSection = document.getElementById("qrSection")!;
+        const $qrCode = document.getElementById("qrCode")!;
+        const $qrUrl = document.getElementById("qrUrl")!;
         $qrCode.innerHTML = qrSvg;
         $qrUrl.textContent = networkUrl;
         $qrSection.classList.remove("hidden");

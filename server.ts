@@ -1,18 +1,41 @@
-const express = require("express");
-const https = require("https");
-const fs = require("fs");
-const { WebSocketServer } = require("ws");
-const path = require("path");
-const os = require("os");
-const QRCode = require("qrcode");
-const selfsigned = require("selfsigned");
+import express from "express";
+import https from "https";
+import fs from "fs";
+import { WebSocketServer, WebSocket } from "ws";
+import path from "path";
+import os from "os";
+import QRCode from "qrcode";
+import selfsigned from "selfsigned";
+
+// ── Types ───────────────────────────────────────────────────────────────────
+
+interface Room {
+  sender: SignalSocket | null;
+  receivers: Set<SignalSocket>;
+}
+
+interface SignalSocket extends WebSocket {
+  _role?: string;
+  _peerId?: string;
+}
+
+interface SignalMessage {
+  type: string;
+  room?: string;
+  role?: string;
+  peerId?: string;
+  to?: string;
+  from?: string;
+  [key: string]: unknown;
+}
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-function getLocalIPs() {
+function getLocalIPs(): string[] {
   const nets = os.networkInterfaces();
-  const ips = [];
+  const ips: string[] = [];
   for (const iface of Object.values(nets)) {
+    if (!iface) continue;
     for (const cfg of iface) {
       if (cfg.family === "IPv4" && !cfg.internal) ips.push(cfg.address);
     }
@@ -20,7 +43,7 @@ function getLocalIPs() {
   return ips;
 }
 
-function getNetworkUrl(port) {
+function getNetworkUrl(port: number | string): string {
   const ips = getLocalIPs();
   if (ips.length > 0) return `https://${ips[0]}:${port}`;
   return `https://localhost:${port}`;
@@ -32,7 +55,10 @@ const CERT_DIR = path.join(__dirname, ".certs");
 const CERT_PATH = path.join(CERT_DIR, "cert.pem");
 const KEY_PATH = path.join(CERT_DIR, "key.pem");
 
-async function ensureCerts() {
+async function ensureCerts(): Promise<{
+  cert: string | Buffer;
+  key: string | Buffer;
+}> {
   if (fs.existsSync(CERT_PATH) && fs.existsSync(KEY_PATH)) {
     return { cert: fs.readFileSync(CERT_PATH), key: fs.readFileSync(KEY_PATH) };
   }
@@ -45,11 +71,11 @@ async function ensureCerts() {
     algorithm: "sha256",
     extensions: [
       {
-        name: "subjectAltName",
+        name: "subjectAltName" as const,
         altNames: [
-          { type: 2, value: "localhost" },
-          { type: 7, ip: "127.0.0.1" },
-          ...getLocalIPs().map((ip) => ({ type: 7, ip })),
+          { type: 2 as const, value: "localhost" },
+          { type: 7 as const, ip: "127.0.0.1" },
+          ...getLocalIPs().map((ip) => ({ type: 7 as const, ip })),
         ],
       },
     ],
@@ -66,19 +92,36 @@ async function ensureCerts() {
 
 // ── Main ────────────────────────────────────────────────────────────────────
 
-async function main() {
+async function main(): Promise<void> {
   const { cert, key } = await ensureCerts();
 
   const app = express();
   const server = https.createServer({ cert, key }, app);
+  const wss = new WebSocketServer({ server });
+
+  // ── Graceful shutdown ─────────────────────────────────────────────────
+
+  function shutdown() {
+    console.log("\n  Shutting down…");
+    wss.clients.forEach((ws) => ws.close());
+    wss.close();
+    server.close(() => process.exit(0));
+    // Force exit if connections linger
+    setTimeout(() => process.exit(0), 3000);
+  }
+
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 
   // Serve static files from public/
   app.use(express.static(path.join(__dirname, "public")));
 
   // ── API: server info + QR SVG ─────────────────────────────────────────
 
-  app.get("/api/info", async (req, res) => {
-    const port = server.address()?.port || process.env.PORT || 3000;
+  app.get("/api/info", async (_req, res) => {
+    const port = server.address()
+      ? (server.address() as { port: number }).port
+      : process.env.PORT || 3000;
     const networkUrl = getNetworkUrl(port);
     try {
       const qrSvg = await QRCode.toString(networkUrl, {
@@ -94,31 +137,29 @@ async function main() {
 
   // ── WebSocket signaling ───────────────────────────────────────────────
 
-  const wss = new WebSocketServer({ server });
+  const rooms = new Map<string, Room>();
 
-  const rooms = new Map();
-
-  function getRoom(id) {
+  function getRoom(id: string): Room {
     if (!rooms.has(id)) {
       rooms.set(id, { sender: null, receivers: new Set() });
     }
-    return rooms.get(id);
+    return rooms.get(id)!;
   }
 
-  function log(room, msg) {
+  function log(room: string, msg: string): void {
     const ts = new Date().toLocaleTimeString();
     console.log(`  [${ts}] [${room}] ${msg}`);
   }
 
-  wss.on("connection", (ws) => {
-    let currentRoom = null;
-    let currentRoomName = null;
-    let role = null;
+  wss.on("connection", (ws: SignalSocket) => {
+    let currentRoom: Room | null = null;
+    let currentRoomName: string | null = null;
+    let role: string | null = null;
 
     ws.on("message", (raw) => {
-      let msg;
+      let msg: SignalMessage;
       try {
-        msg = JSON.parse(raw);
+        msg = JSON.parse(raw.toString());
       } catch {
         return;
       }
@@ -127,10 +168,10 @@ async function main() {
 
       // ── Join a room ────────────────────────────────────────────────────
       if (type === "join") {
-        const room = getRoom(msg.room);
+        const room = getRoom(msg.room!);
         currentRoom = room;
-        currentRoomName = msg.room;
-        role = msg.role;
+        currentRoomName = msg.room!;
+        role = msg.role!;
 
         if (role === "sender") {
           if (room.sender && room.sender !== ws) {
@@ -182,13 +223,16 @@ async function main() {
             }
           } else {
             for (const r of currentRoom.receivers) {
-              if (r.readyState === 1) {
+              if (r.readyState === WebSocket.OPEN) {
                 r.send(JSON.stringify({ ...msg, from: ws._peerId }));
               }
             }
           }
         } else {
-          if (currentRoom.sender && currentRoom.sender.readyState === 1) {
+          if (
+            currentRoom.sender &&
+            currentRoom.sender.readyState === WebSocket.OPEN
+          ) {
             currentRoom.sender.send(
               JSON.stringify({ ...msg, from: ws._peerId }),
             );
@@ -212,19 +256,22 @@ async function main() {
 
       if (effectiveRole === "sender" && currentRoom.sender === ws) {
         currentRoom.sender = null;
-        log(currentRoomName, "Video feed stopped");
+        log(currentRoomName!, "Video feed stopped");
         for (const r of currentRoom.receivers) {
-          if (r.readyState === 1) {
+          if (r.readyState === WebSocket.OPEN) {
             r.send(JSON.stringify({ type: "sender-left" }));
           }
         }
       } else {
         currentRoom.receivers.delete(ws);
         log(
-          currentRoomName,
+          currentRoomName!,
           `Receiver disconnected (${currentRoom.receivers.size} viewer${currentRoom.receivers.size !== 1 ? "s" : ""} remaining)`,
         );
-        if (currentRoom.sender && currentRoom.sender.readyState === 1) {
+        if (
+          currentRoom.sender &&
+          currentRoom.sender.readyState === WebSocket.OPEN
+        ) {
           currentRoom.sender.send(
             JSON.stringify({ type: "receiver-left", peerId: ws._peerId }),
           );
@@ -245,12 +292,12 @@ async function main() {
 
   // ── Start server ──────────────────────────────────────────────────────
 
-  const PORT = process.env.PORT || 3000;
+  const PORT = Number(process.env.PORT) || 3000;
   server.listen(PORT, "0.0.0.0", async () => {
     const addresses = getLocalIPs();
 
     const localUrl = `https://localhost:${PORT}`;
-    const urls = [["Local", localUrl]];
+    const urls: [string, string][] = [["Local", localUrl]];
     for (const addr of addresses) {
       urls.push(["Network", `https://${addr}:${PORT}`]);
     }
@@ -262,7 +309,7 @@ async function main() {
       ) + 4;
 
     const line = "═".repeat(contentWidth + 2);
-    const pad = (str) =>
+    const pad = (str: string) =>
       str + " ".repeat(Math.max(0, contentWidth - str.length));
 
     console.log("");
@@ -280,7 +327,6 @@ async function main() {
     try {
       const qrText = await QRCode.toString(networkUrl, {
         type: "utf8",
-        small: true,
       });
       console.log("");
       console.log("  Scan to connect:");

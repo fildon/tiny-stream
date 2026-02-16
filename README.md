@@ -36,7 +36,7 @@ That's it. No accounts, no installs, no cloud.
 ```mermaid
 graph TD
     Sender["Sender (camera)"] -- "WebRTC (peer-to-peer video)" --> Receiver["Receiver (viewer)"]
-    Sender -- "WebSocket signaling" --> Server["Node.js server.js\n(port 3000)"]
+    Sender -- "WebSocket signaling" --> Server["Node.js server.ts\n(port 3000)"]
     Receiver -- "WebSocket signaling" --> Server
 ```
 
