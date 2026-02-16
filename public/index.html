@@ -70,8 +70,15 @@
         <span id="senderRoom" class="room-label"></span>
         <button id="btnStopSend" class="btn-small">✕ Stop</button>
       </div>
-      <div class="video-wrap">
+      <div class="video-wrap" id="senderVideoWrap">
         <video id="localVideo" autoplay playsinline muted></video>
+        <button
+          id="btnFullscreenSend"
+          class="btn-fullscreen"
+          title="Toggle fullscreen"
+        >
+          ⛶
+        </button>
       </div>
       <div id="senderStatus" class="status">Initializing camera…</div>
       <div id="senderCode" class="room-code-display hidden">
@@ -91,8 +98,15 @@
         <span id="receiverRoom" class="room-label"></span>
         <button id="btnStopRecv" class="btn-small">✕ Stop</button>
       </div>
-      <div class="video-wrap">
+      <div class="video-wrap" id="receiverVideoWrap">
         <video id="remoteVideo" autoplay playsinline></video>
+        <button
+          id="btnFullscreenRecv"
+          class="btn-fullscreen"
+          title="Toggle fullscreen"
+        >
+          ⛶
+        </button>
       </div>
       <div id="receiverStatus" class="status">Waiting for sender…</div>
     </div>

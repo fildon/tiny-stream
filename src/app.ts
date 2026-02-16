@@ -24,6 +24,10 @@ const $cameraSelect = document.getElementById(
 const $codeInput = document.getElementById("codeInput") as HTMLInputElement;
 const $senderCode = document.getElementById("senderCode")!;
 const $senderCodeValue = document.getElementById("senderCodeValue")!;
+const $senderVideoWrap = document.getElementById("senderVideoWrap")!;
+const $receiverVideoWrap = document.getElementById("receiverVideoWrap")!;
+const $btnFullscreenSend = document.getElementById("btnFullscreenSend")!;
+const $btnFullscreenRecv = document.getElementById("btnFullscreenRecv")!;
 
 // ── State ───────────────────────────────────────────────────────────────
 let ws: WebSocket | null = null;
@@ -462,6 +466,25 @@ $btnStopRecv.addEventListener("click", stopEverything);
 
 $btnSend.addEventListener("click", startSending);
 $btnReceive.addEventListener("click", startAsReceiver);
+
+// ── Fullscreen toggle ──────────────────────────────────────────────────
+
+function toggleFullscreen(el: HTMLElement): void {
+  if (document.fullscreenElement === el) {
+    document.exitFullscreen();
+  } else {
+    el.requestFullscreen().catch(() => {
+      // Ignore – some browsers block programmatic fullscreen
+    });
+  }
+}
+
+$btnFullscreenSend.addEventListener("click", () =>
+  toggleFullscreen($senderVideoWrap),
+);
+$btnFullscreenRecv.addEventListener("click", () =>
+  toggleFullscreen($receiverVideoWrap),
+);
 
 // Persist room name
 const saved = localStorage.getItem("tiny-stream-room");
