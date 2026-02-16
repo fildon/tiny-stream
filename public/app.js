@@ -95,7 +95,7 @@
             height: { ideal: 720 },
           }
         : { width: { ideal: 1280 }, height: { ideal: 720 } },
-      audio: false,
+      audio: true,
     };
     return navigator.mediaDevices.getUserMedia(constraints);
   }

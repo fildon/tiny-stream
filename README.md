@@ -1,6 +1,6 @@
 # tiny-stream
 
-One-way video streaming between your devices — open a URL, pick Send or Receive, done.
+One-way video + audio streaming between your devices — open a URL, pick Send or Receive, done.
 
 ## Quick Start
 
@@ -26,8 +26,8 @@ Open the **Network** URL on any device connected to your home Wi-Fi/LAN.
 
 1. Open the URL on **two devices** (laptops, desktop, phone — anything with a browser).
 2. Both devices enter the same **room name** (default: `home`).
-3. On one device, tap **Send Video** — it opens your camera and starts streaming.
-4. On the other device, tap **Receive Video** — it shows the live feed.
+3. On one device, tap **Send Video** — it opens your camera/microphone and starts streaming.
+4. On the other device, tap **Receive Video** — it shows the live feed with audio.
 
 That's it. No accounts, no installs, no cloud.
 
@@ -40,7 +40,7 @@ graph TD
     Receiver -- "WebSocket signaling" --> Server
 ```
 
-- **Video** travels directly between devices via WebRTC (peer-to-peer). The server never sees your video.
+- **Video + audio** travels directly between devices via WebRTC (peer-to-peer). The server never sees your stream.
 - **Signaling** (tiny JSON messages to set up the connection) goes through the Node.js WebSocket server.
 
 ## Features
@@ -49,7 +49,7 @@ graph TD
 - **Camera switching** — sender can switch between cameras on the fly
 - **Room-based** — run multiple independent streams with different room names
 - **Mobile-friendly** — works on phone browsers (Chrome, Safari, Firefox)
-- **No audio** — video only, by design (keeps it simple and bandwidth-friendly)
+- **Audio + video** — streams both camera and microphone
 - **Zero config** — no TURN servers needed on a home network
 
 ## Requirements
