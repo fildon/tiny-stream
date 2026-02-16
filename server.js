@@ -105,8 +105,14 @@ async function main() {
     return rooms.get(id);
   }
 
+  function log(room, msg) {
+    const ts = new Date().toLocaleTimeString();
+    console.log(`  [${ts}] [${room}] ${msg}`);
+  }
+
   wss.on("connection", (ws) => {
     let currentRoom = null;
+    let currentRoomName = null;
     let role = null;
 
     ws.on("message", (raw) => {
@@ -123,6 +129,7 @@ async function main() {
       if (type === "join") {
         const room = getRoom(msg.room);
         currentRoom = room;
+        currentRoomName = msg.room;
         role = msg.role;
 
         if (role === "sender") {
@@ -133,11 +140,16 @@ async function main() {
             room.sender.close();
           }
           room.sender = ws;
+          log(currentRoomName, "Video feed started");
           for (const r of room.receivers) {
             r.send(JSON.stringify({ type: "sender-ready" }));
           }
         } else {
           room.receivers.add(ws);
+          log(
+            currentRoomName,
+            `Receiver joined (${room.receivers.size} viewer${room.receivers.size !== 1 ? "s" : ""})`,
+          );
           if (room.sender) {
             ws.send(JSON.stringify({ type: "sender-ready" }));
           }
@@ -188,6 +200,7 @@ async function main() {
 
       if (role === "sender") {
         currentRoom.sender = null;
+        log(currentRoomName, "Video feed stopped");
         for (const r of currentRoom.receivers) {
           if (r.readyState === 1) {
             r.send(JSON.stringify({ type: "sender-left" }));
@@ -195,6 +208,10 @@ async function main() {
         }
       } else {
         currentRoom.receivers.delete(ws);
+        log(
+          currentRoomName,
+          `Receiver disconnected (${currentRoom.receivers.size} viewer${currentRoom.receivers.size !== 1 ? "s" : ""} remaining)`,
+        );
         if (currentRoom.sender && currentRoom.sender.readyState === 1) {
           currentRoom.sender.send(
             JSON.stringify({ type: "receiver-left", peerId: ws._peerId }),

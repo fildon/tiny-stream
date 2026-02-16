@@ -13,10 +13,10 @@ The server prints your local network URL:
 
 ```
   ╔══════════════════════════════════════════════╗
-  ║         tiny-stream is running!              ║
+  ║         tiny-stream is running!         ║
   ╠══════════════════════════════════════════════╣
-  ║  Local:   http://localhost:3000              ║
-  ║  Network: http://192.168.1.42:3000           ║
+  ║  Local:   http://localhost:3000         ║
+  ║  Network: http://192.168.1.42:3000      ║
   ╚══════════════════════════════════════════════╝
 ```
 
@@ -33,19 +33,11 @@ That's it. No accounts, no installs, no cloud.
 
 ## Architecture
 
-```
-┌──────────┐   WebRTC (peer-to-peer video)   ┌──────────┐
-│  Sender  │ ──────────────────────────────►  │ Receiver │
-│ (camera) │                                  │ (viewer) │
-└────┬─────┘                                  └────┬─────┘
-     │          WebSocket signaling                │
-     └──────────────┐    ┌─────────────────────────┘
-                    ▼    ▼
-              ┌──────────────┐
-              │  Node.js     │
-              │  server.js   │
-              │  (port 3000) │
-              └──────────────┘
+```mermaid
+graph TD
+    Sender["Sender (camera)"] -- "WebRTC (peer-to-peer video)" --> Receiver["Receiver (viewer)"]
+    Sender -- "WebSocket signaling" --> Server["Node.js server.js\n(port 3000)"]
+    Receiver -- "WebSocket signaling" --> Server
 ```
 
 - **Video** travels directly between devices via WebRTC (peer-to-peer). The server never sees your video.
