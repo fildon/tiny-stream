@@ -27,20 +27,6 @@
         />
       </div>
 
-      <div class="room-input" id="codeInputWrap">
-        <label for="codeInput"
-          >Room code <span class="code-hint">(required to watch)</span></label
-        >
-        <input
-          id="codeInput"
-          type="text"
-          inputmode="numeric"
-          maxlength="4"
-          placeholder="4-digit code"
-          autocomplete="off"
-        />
-      </div>
-
       <div class="role-buttons">
         <button id="btnSend" class="btn btn-send">
           <span class="icon">📷</span>
@@ -81,10 +67,6 @@
         </button>
       </div>
       <div id="senderStatus" class="status">Initializing camera…</div>
-      <div id="senderCode" class="room-code-display hidden">
-        Room code: <span id="senderCodeValue" class="code-value"></span>
-        <span class="code-note">Share this code with viewers</span>
-      </div>
       <div class="camera-select-wrap">
         <label for="cameraSelect">Camera:</label>
         <select id="cameraSelect"></select>

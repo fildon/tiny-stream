@@ -21,9 +21,6 @@ const $btnStopRecv = document.getElementById("btnStopRecv")!;
 const $cameraSelect = document.getElementById(
   "cameraSelect",
 ) as HTMLSelectElement;
-const $codeInput = document.getElementById("codeInput") as HTMLInputElement;
-const $senderCode = document.getElementById("senderCode")!;
-const $senderCodeValue = document.getElementById("senderCodeValue")!;
 const $senderVideoWrap = document.getElementById("senderVideoWrap")!;
 const $receiverVideoWrap = document.getElementById("receiverVideoWrap")!;
 const $btnFullscreenSend = document.getElementById("btnFullscreenSend")!;
@@ -135,22 +132,6 @@ function connectWS(onOpen: () => void): void {
 function handleSignal(msg: SignalMessage): void {
   switch (msg.type) {
     case "joined":
-      break;
-
-    case "room-code":
-      // Sender receives the room code to display
-      if (msg.code) {
-        $senderCodeValue.textContent = msg.code;
-        $senderCode.classList.remove("hidden");
-      }
-      break;
-
-    case "join-denied":
-      // Receiver was denied entry
-      if (role === "receiver") {
-        $receiverStatus.textContent = `Access denied: ${msg.reason || "Invalid code"}`;
-        setTimeout(() => stopEverything(), 2000);
-      }
       break;
 
     // ── Sender-side signals ────────────────────────────────────────────
@@ -302,15 +283,8 @@ async function startAsReceiver(): Promise<void> {
   $receiverRoom.textContent = `Room: ${roomName}`;
   $receiverStatus.textContent = "Connecting…";
 
-  const code = $codeInput.value.trim();
-  if (!code) {
-    $receiverStatus.textContent = "Room code is required.";
-    setTimeout(() => stopEverything(), 2000);
-    return;
-  }
-
   connectWS(() => {
-    send({ type: "join", room: roomName, role: "receiver", code });
+    send({ type: "join", room: roomName, role: "receiver" });
     $receiverStatus.textContent = "Waiting for sender…";
   });
 }
@@ -455,8 +429,6 @@ function stopEverything(): void {
   hide($sender);
   hide($receiver);
   show($landing);
-  $senderCode.classList.add("hidden");
-  $codeInput.value = "";
 }
 
 $btnStopSend.addEventListener("click", stopEverything);

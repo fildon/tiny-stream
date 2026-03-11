@@ -8,7 +8,6 @@ export interface SignalMessage {
   newRole?: string;
   room?: string;
   role?: string;
-  code?: string;
   reason?: string;
   [key: string]: unknown;
 }

@@ -13,7 +13,6 @@ import type { SignalMessage } from "./src/types";
 interface Room {
   sender: WebSocket | null;
   receivers: Set<WebSocket>;
-  code: string;
 }
 
 interface SocketMeta {
@@ -23,10 +22,6 @@ interface SocketMeta {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
-
-function generateRoomCode(): string {
-  return Math.floor(1000 + Math.random() * 9000).toString();
-}
 
 function getLocalIPs(): string[] {
   const nets = os.networkInterfaces();
@@ -149,7 +144,6 @@ function setupSignaling(wss: WebSocketServer, rooms: Map<string, Room>): void {
       rooms.set(id, {
         sender: null,
         receivers: new Set(),
-        code: generateRoomCode(),
       });
     }
     return rooms.get(id)!;
@@ -185,17 +179,6 @@ function setupSignaling(wss: WebSocketServer, rooms: Map<string, Room>): void {
 
         const room = getRoom(msg.room);
 
-        // Receivers must provide the correct room code
-        if (msg.role === "receiver" && msg.code !== room.code) {
-          ws.send(
-            JSON.stringify({
-              type: "join-denied",
-              reason: msg.code ? "Invalid room code" : "Room code required",
-            }),
-          );
-          return;
-        }
-
         meta.roomName = msg.room;
         meta.role = msg.role;
 
@@ -211,9 +194,7 @@ function setupSignaling(wss: WebSocketServer, rooms: Map<string, Room>): void {
             log(msg.room, "Previous sender demoted to receiver");
           }
           room.sender = ws;
-          log(msg.room, `Video feed started (code: ${room.code})`);
-          // Send the room code back to the sender
-          ws.send(JSON.stringify({ type: "room-code", code: room.code }));
+          log(msg.room, "Video feed started");
           // Notify all receivers (including the demoted one) that a new sender is ready
           for (const r of room.receivers) {
             r.send(JSON.stringify({ type: "sender-ready" }));
