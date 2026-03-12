@@ -25,6 +25,8 @@ const $senderVideoWrap = document.getElementById("senderVideoWrap")!;
 const $receiverVideoWrap = document.getElementById("receiverVideoWrap")!;
 const $btnFullscreenSend = document.getElementById("btnFullscreenSend")!;
 const $btnFullscreenRecv = document.getElementById("btnFullscreenRecv")!;
+const $senderOverlay = document.getElementById("senderOverlay")!;
+const $receiverOverlay = document.getElementById("receiverOverlay")!;
 
 // ── State ───────────────────────────────────────────────────────────────
 let ws: WebSocket | null = null;
@@ -46,6 +48,7 @@ const peerConnections = new Map<string, RTCPeerConnection>();
 
 // Receiver keeps a single RTCPeerConnection to the sender
 let receiverPC: RTCPeerConnection | null = null;
+let fullscreenExitTimer: ReturnType<typeof setTimeout> | null = null;
 
 // Free STUN servers for NAT traversal (local network usually doesn't need them,
 // but they don't hurt and help if you ever go cross-network)
@@ -63,6 +66,36 @@ function show(el: HTMLElement): void {
 }
 function hide(el: HTMLElement): void {
   el.classList.add("hidden");
+}
+
+function showConnectionOverlay(
+  overlay: HTMLElement,
+  videoWrap: HTMLElement,
+  subtitle: string,
+): void {
+  overlay.querySelector(".overlay-sub")!.textContent = subtitle;
+  show(overlay);
+  // Auto-exit fullscreen after 10 s if still disconnected
+  clearFullscreenExitTimer();
+  if (document.fullscreenElement === videoWrap) {
+    fullscreenExitTimer = setTimeout(() => {
+      if (document.fullscreenElement === videoWrap) {
+        document.exitFullscreen().catch(() => {});
+      }
+    }, 10_000);
+  }
+}
+
+function hideConnectionOverlay(overlay: HTMLElement): void {
+  hide(overlay);
+  clearFullscreenExitTimer();
+}
+
+function clearFullscreenExitTimer(): void {
+  if (fullscreenExitTimer !== null) {
+    clearTimeout(fullscreenExitTimer);
+    fullscreenExitTimer = null;
+  }
 }
 
 function wsUrl(): string {
@@ -123,6 +156,11 @@ function connectWS(onOpen: () => void): void {
   ws.onclose = () => {
     if (role === "receiver") {
       $receiverStatus.textContent = "Connection lost. Refresh to retry.";
+      showConnectionOverlay(
+        $receiverOverlay,
+        $receiverVideoWrap,
+        "Refresh to retry",
+      );
     }
   };
 }
@@ -179,6 +217,11 @@ function handleSignal(msg: SignalMessage): void {
           receiverPC.close();
           receiverPC = null;
         }
+        showConnectionOverlay(
+          $receiverOverlay,
+          $receiverVideoWrap,
+          "Waiting for sender…",
+        );
       }
       break;
 
@@ -316,6 +359,7 @@ async function handleOffer(msg: SignalMessage): Promise<void> {
     $remoteVideo.srcObject = e.streams[0];
     $receiverStatus.textContent = "Receiving live video ●";
     $receiverStatus.classList.add("live");
+    hideConnectionOverlay($receiverOverlay);
   };
 
   pc.onicecandidate = (e) => {
@@ -331,6 +375,11 @@ async function handleOffer(msg: SignalMessage): Promise<void> {
     ) {
       $receiverStatus.textContent = "Connection lost. Waiting for sender…";
       $receiverStatus.classList.remove("live");
+      showConnectionOverlay(
+        $receiverOverlay,
+        $receiverVideoWrap,
+        "Waiting for sender…",
+      );
     }
   };
 

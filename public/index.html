@@ -65,6 +65,13 @@
         >
           ⛶
         </button>
+        <div class="connection-overlay hidden" id="senderOverlay">
+          <div class="connection-overlay-content">
+            <div class="overlay-spinner"></div>
+            <p class="overlay-msg">Connection lost</p>
+            <p class="overlay-sub">Waiting for viewers…</p>
+          </div>
+        </div>
       </div>
       <div id="senderStatus" class="status">Initializing camera…</div>
       <div class="camera-select-wrap">
@@ -89,6 +96,13 @@
         >
           ⛶
         </button>
+        <div class="connection-overlay hidden" id="receiverOverlay">
+          <div class="connection-overlay-content">
+            <div class="overlay-spinner"></div>
+            <p class="overlay-msg">Connection lost</p>
+            <p class="overlay-sub">Waiting for sender…</p>
+          </div>
+        </div>
       </div>
       <div id="receiverStatus" class="status">Waiting for sender…</div>
     </div>

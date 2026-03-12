@@ -351,6 +351,58 @@ body {
   }
 }
 
+/* ── Connection-lost overlay ─────────────────────────────────────────────── */
+
+.connection-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.75);
+  z-index: 20;
+  border-radius: inherit;
+}
+
+.connection-overlay-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.overlay-spinner {
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 3px solid rgba(255, 255, 255, 0.15);
+  border-top-color: var(--danger);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.overlay-msg {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.overlay-sub {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+/* Show overlay in fullscreen too */
+.video-wrap:fullscreen .connection-overlay,
+.video-wrap:-webkit-full-screen .connection-overlay {
+  border-radius: 0;
+}
+
 /* ── QR Code section ────────────────────────────────────────────────────── */
 
 .qr-section {
