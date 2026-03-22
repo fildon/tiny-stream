@@ -236,6 +236,10 @@ function handleSignal(msg: SignalMessage): void {
 async function startSending(): Promise<void> {
   role = "sender";
   roomName = $roomInput.value.trim() || "home";
+  localStorage.setItem(
+    "tiny-stream-session",
+    JSON.stringify({ role, room: roomName }),
+  );
   hide($landing);
   show($sender);
   $senderRoom.textContent = `Room: ${roomName}`;
@@ -321,6 +325,10 @@ function updateSenderStatus(): void {
 async function startAsReceiver(): Promise<void> {
   role = "receiver";
   roomName = $roomInput.value.trim() || "home";
+  localStorage.setItem(
+    "tiny-stream-session",
+    JSON.stringify({ role, room: roomName }),
+  );
   hide($landing);
   show($receiver);
   $receiverRoom.textContent = `Room: ${roomName}`;
@@ -415,6 +423,10 @@ function switchToReceiver(): void {
 
   // Switch role
   role = "receiver";
+  localStorage.setItem(
+    "tiny-stream-session",
+    JSON.stringify({ role, room: roomName }),
+  );
 
   // Switch UI
   hide($sender);
@@ -474,6 +486,7 @@ function stopEverything(): void {
   if (ws) ws.close();
   ws = null;
   role = null;
+  localStorage.removeItem("tiny-stream-session");
 
   hide($sender);
   hide($receiver);
@@ -487,6 +500,20 @@ $btnStopRecv.addEventListener("click", stopEverything);
 
 $btnSend.addEventListener("click", startSending);
 $btnReceive.addEventListener("click", startAsReceiver);
+
+// ── Auto-rejoin from previous session ──────────────────────────────────
+
+const savedSession = localStorage.getItem("tiny-stream-session");
+if (savedSession) {
+  try {
+    const { role: savedRole, room } = JSON.parse(savedSession);
+    if (room) $roomInput.value = room;
+    if (savedRole === "sender") startSending();
+    else if (savedRole === "receiver") startAsReceiver();
+  } catch {
+    localStorage.removeItem("tiny-stream-session");
+  }
+}
 
 // ── Fullscreen toggle ──────────────────────────────────────────────────
 
