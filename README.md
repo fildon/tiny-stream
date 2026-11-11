@@ -5,8 +5,8 @@ One-way video + audio streaming between your devices — open a URL, pick Send o
 ## Quick Start
 
 ```bash
-npm install
-npm start
+pnpm install
+pnpm start
 ```
 
 The server prints your local network URL:
@@ -67,7 +67,7 @@ graph TD
 | `PORT`       | `3000`  | Server port |
 
 ```bash
-PORT=8080 npm start
+PORT=8080 pnpm start
 ```
 
 ## Troubleshooting
